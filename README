@@ -1,0 +1,3 @@
+Renderer.js
+
+Renderer provides a way to render tiddlers of multiple different types automatically by registering different render functions to different content types. When you call render with a tiddler, Renderer then checks the type and calls the appropriate render function.
