@@ -1,52 +1,110 @@
 window.Renderer = (function($) {
 
-// transform a tiddler to HTML, based on type
-var parse = function(tiddler, cntxt) {
+var defaultContext = {};
+
+var lookupType = function(tiddler) {
+	var found = null;
+	$.each(types, function(name, obj) {
+		if (obj.type === tiddler.type) {
+			found = obj;
+			return false;
+		}
+	});
+	return found;
 };
 
 // parse a tiddler and render it into the DOM
-var render = function(tiddler, context) {
-	var renderer, cntxt, html;
+// template is optional and specifies the name of the render function you want to
+// use (e.g. html) if you want to force a specific type.
+var render = function(template, tiddler, cntxt) {
+	var renderer, html;
 
-	renderer = types[tiddler.type] || types['default'];
-	context = context || renderer.context || {};
+	var templateIsTid = (template instanceof tiddlyweb.Tiddler) ? true : false;
+	tid = (templateIsTid) ? template : tiddler;
 
-	html = renderer.render.call(context, tiddler);
+	renderer = (templateIsTid) ? (lookupType(tid) || types['default']) :
+		types[template];
+	context = (renderer.context) ? $.extend({}, renderer.context) :
+		$.extend({}, defaultContext);
+	context = (templateIsTid) ? $.extend(context, tiddler) :
+		$.extend(context, cntxt);
+
+	html = renderer.render.call(context, tid);
 
 	return html;
 };
 
 var types = {
-	'text/html': {
+	'html': {
+		type: 'text/html',
 		render: function(tiddler) {
 			return tiddler.text;
 		}
 	},
-	'text/javascript': {
+	'widget': {
+		type: 'text/javascript',
 		render: function(tiddler) {
-			// simply call the javascript as an immediately executing function with context
-			// TODO: Add Google Caja (or similar)
-			return new Function(tiddler.text).call(this);
+			var callback = widgets[tiddler.title],
+				widget = {},
+				args = this;;
+			if (!callback) {
+				$.globalEval(tiddler.text);
+				callback = widgets[tiddler.title];
+				if (!callback) {
+					throw {
+						name: 'BadWidgetError',
+						message: 'Widget ' + tiddler.title + ' not found.'
+					};
+				}
+			}
+
+			callback.call(widget);
+			var html = widget.handler.call({ args: args });
+			if (widget.receiveMessage) {
+				$(html).bind('message', function(e, message) {
+					widget.receiveMessage.call({ args: args }, message);
+				});
+			}
+
+			return html;
 		}
 	},
 	'default': {
+		type: 'text/plain',
 		render: function(tiddler) {
 			return '<div>' + tiddler.text + '</div>';
 		}
 	}
 };
 
-var register = function(type, render, context) {
-	types[type] = {
+var widgets = {};
+
+var register = function(name, type, render, context) {
+	types[name] = {
+		type: type || '',
 		render: render,
 		context: context || {}
 	};
 };
 
+var addWidget = function(title, callback) {
+	widgets[title] = callback;
+};
+
+var postMessage = function($el, message) {
+	$el.trigger('message', message);
+};
+
+var attachStore = function(store) {
+	defaultContext.store = store;
+};
+
 return {
 	render: render,
-	types: types,
-	register: register
+	register: register,
+	addWidget: addWidget,
+	postMessage: postMessage,
+	attachStore: attachStore
 };
 
 }(jQuery));
