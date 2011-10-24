@@ -16,18 +16,25 @@ var lookupType = function(tiddler) {
 // parse a tiddler and render it into the DOM
 // template is optional and specifies the name of the render function you want to
 // use (e.g. html) if you want to force a specific type.
-var render = function(template, tiddler, cntxt) {
-	var renderer, html;
+var render = function(tiddler, cntxt, template) {
+	var renderer, html, store = defaultContext.store;
 
-	var templateIsTid = (template instanceof tiddlyweb.Tiddler) ? true : false;
-	tid = (templateIsTid) ? template : tiddler;
+	tid = (tiddler instanceof tiddlyweb.Tiddler) ? tiddler :
+		(store) ? store.get(tiddler) : null;
 
-	renderer = (templateIsTid) ? (lookupType(tid) || types['default']) :
+	if (!tid) {
+		throw {
+			type: 'NoTiddlerError',
+			message: 'tiddler ' + tiddler + ' not found or not available'
+		};
+	}
+
+	renderer = (!template) ? (lookupType(tid) || types['default']) :
 		types[template];
-	context = (renderer.context) ? $.extend({}, renderer.context) :
-		$.extend({}, defaultContext);
-	context = (templateIsTid) ? $.extend(context, tiddler) :
-		$.extend(context, cntxt);
+
+	context = $.extend({}, defaultContext);
+	$.extend(context, renderer.context || {});
+	context.args = cntxt || {};
 
 	html = renderer.render.call(context, tid);
 
@@ -46,7 +53,7 @@ var types = {
 		render: function(tiddler) {
 			var callback = widgets[tiddler.title],
 				widget = {},
-				args = this;;
+				context = this;
 			if (!callback) {
 				$.globalEval(tiddler.text);
 				callback = widgets[tiddler.title];
@@ -59,10 +66,10 @@ var types = {
 			}
 
 			callback.call(widget);
-			var html = widget.handler.call({ args: args });
+			var html = widget.handler.call(context, context.args);
 			if (widget.receiveMessage) {
 				$(html).bind('message', function(e, message) {
-					widget.receiveMessage.call({ args: args }, message);
+					widget.receiveMessage.call(context, message);
 				});
 			}
 
